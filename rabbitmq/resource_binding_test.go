@@ -28,6 +28,23 @@ func TestAccBinding_basic(t *testing.T) {
 	})
 }
 
+func TestAccBinding_basic_on_slash_vhost(t *testing.T) {
+	var bindingInfo rabbithole.BindingInfo
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccBindingCheckDestroy(bindingInfo),
+		Steps: []resource.TestStep{
+			resource.TestStep{
+				Config: testAccBindingConfig_basic_slash_vhost,
+				Check: testAccBindingCheck(
+					"rabbitmq_binding.slashtest", &bindingInfo,
+				),
+			},
+		},
+	})
+}
+
 func TestAccBinding_propertiesKey(t *testing.T) {
 	var bindingInfo rabbithole.BindingInfo
 	resource.Test(t, resource.TestCase{
@@ -59,13 +76,25 @@ func testAccBindingCheck(rn string, bindingInfo *rabbithole.BindingInfo) resourc
 		rmqc := testAccProvider.Meta().(*rabbithole.Client)
 		bindingParts := strings.Split(rs.Primary.ID, "/")
 
-		bindings, err := rmqc.ListBindingsIn(bindingParts[0])
+		index := 0
+		vhost := bindingParts[0]
+
+		// vhost is /, so we need to skip the first item, and replace empty vhost
+		if strings.HasPrefix(rs.Primary.ID, "//") {
+			index = 1
+			vhost = "/"
+			if len(bindingParts) < 6 {
+				return fmt.Errorf("Unable to determine binding ID")
+			}
+		}
+
+		bindings, err := rmqc.ListBindingsIn(vhost)
 		if err != nil {
 			return fmt.Errorf("Error retrieving exchange: %s", err)
 		}
 
 		for _, binding := range bindings {
-			if binding.Source == bindingParts[1] && binding.Destination == bindingParts[2] && binding.DestinationType == bindingParts[3] && binding.PropertiesKey == bindingParts[4] {
+			if binding.Source == bindingParts[index+1] && binding.Destination == bindingParts[index+2] && binding.DestinationType == bindingParts[index+3] && binding.PropertiesKey == bindingParts[index+4] {
 				bindingInfo = &binding
 				return nil
 			}
@@ -131,6 +160,48 @@ resource "rabbitmq_queue" "test" {
 resource "rabbitmq_binding" "test" {
     source = "${rabbitmq_exchange.test.name}"
     vhost = "${rabbitmq_vhost.test.name}"
+    destination = "${rabbitmq_queue.test.name}"
+    destination_type = "queue"
+    routing_key = "#"
+}`
+
+const testAccBindingConfig_basic_slash_vhost = `
+resource "rabbitmq_vhost" "slashtest" {
+    name = "/"
+}
+
+resource "rabbitmq_permissions" "guest" {
+    user = "guest"
+    vhost = "${rabbitmq_vhost.slashtest.name}"
+    permissions {
+        configure = ".*"
+        write = ".*"
+        read = ".*"
+    }
+}
+
+resource "rabbitmq_exchange" "test" {
+    name = "test"
+    vhost = "${rabbitmq_permissions.guest.vhost}"
+    settings {
+        type = "fanout"
+        durable = false
+        auto_delete = true
+    }
+}
+
+resource "rabbitmq_queue" "test" {
+    name = "test"
+    vhost = "${rabbitmq_permissions.guest.vhost}"
+    settings {
+        durable = true
+        auto_delete = false
+    }
+}
+
+resource "rabbitmq_binding" "slashtest" {
+    source = "${rabbitmq_exchange.test.name}"
+    vhost = "${rabbitmq_vhost.slashtest.name}"
     destination = "${rabbitmq_queue.test.name}"
     destination_type = "queue"
     routing_key = "#"

@@ -97,17 +97,29 @@ func ReadBinding(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Unable to determine binding ID")
 	}
 
+	index := 0
 	vhost := bindingId[0]
-	source := bindingId[1]
-	destination := bindingId[2]
-	destinationType := bindingId[3]
-	propertiesKey := bindingId[4]
+
+	// vhost is /, so we need to skip the first item, and replace empty vhost
+	if strings.HasPrefix(d.Id(), "//") {
+		index = 1
+		vhost = "/"
+		if len(bindingId) < 6 {
+			return fmt.Errorf("Unable to determine binding ID")
+		}
+	}
+
+	source := bindingId[index+1]
+	destination := bindingId[index+2]
+	destinationType := bindingId[index+3]
+	propertiesKey := bindingId[index+4]
 
 	bindings, err := rmqc.ListBindingsIn(vhost)
 	if err != nil {
 		return err
 	}
 
+	log.Printf("[DEBUG] RabbitMQ: Trying to match: %#v", bindingId)
 	log.Printf("[DEBUG] RabbitMQ: Bindings retrieved: %#v", bindings)
 	bindingFound := false
 	for _, binding := range bindings {
@@ -142,11 +154,22 @@ func DeleteBinding(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Unable to determine binding ID")
 	}
 
+	index := 0
 	vhost := bindingId[0]
-	source := bindingId[1]
-	destination := bindingId[2]
-	destinationType := bindingId[3]
-	propertiesKey := bindingId[4]
+
+	// vhost is /, so we need to skip the first item, and replace empty vhost
+	if strings.HasPrefix(d.Id(), "//") {
+		index = 1
+		vhost = "/"
+		if len(bindingId) < 6 {
+			return fmt.Errorf("Unable to determine binding ID")
+		}
+	}
+
+	source := bindingId[index+1]
+	destination := bindingId[index+2]
+	destinationType := bindingId[index+3]
+	propertiesKey := bindingId[index+4]
 
 	bindingInfo := rabbithole.BindingInfo{
 		Vhost:           vhost,
